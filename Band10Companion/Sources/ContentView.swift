@@ -107,13 +107,13 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                             }
                         }
-                        Text("Записей: \\(bluetooth.logEntries.count). В отчёте есть время событий, ошибки подключения, состояние Bluetooth и этапы GATT. Ключ авторизации не записывается.")
+                        Text("Записей: \(bluetooth.logEntries.count). В отчёте есть время событий, ошибки подключения, состояние Bluetooth и этапы GATT. Ключ авторизации не записывается.")
                             .font(.caption).foregroundStyle(.secondary)
                         if bluetooth.logEntries.isEmpty {
                             Text("Журнал пока пуст. Запустите поиск и повторите подключение.")
                                 .foregroundStyle(.secondary)
                         } else {
-                            ForEach(bluetooth.logEntries.suffix(30), id: \\.self) { entry in
+                            ForEach(bluetooth.logEntries.suffix(30), id: \.self) { entry in
                                 Text(entry).font(.system(.caption2, design: .monospaced))
                                     .textSelection(.enabled)
                             }
