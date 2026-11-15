@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feature/band10-companion
+      - band10-companion
     paths:
       - "Band10Companion/**"
       - ".github/workflows/band10-ipa.yml"
