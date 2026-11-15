@@ -316,7 +316,7 @@ private struct KeyTab: View {
             // container folder is unreliable in the iOS Files picker.
             .fileImporter(
                 isPresented: $showingFilePicker,
-                allowedContentTypes: [UTType(filenameExtension: "sqlite", conformingTo: .database) ?? .database, .zip],
+                allowedContentTypes: [.item],
                 allowsMultipleSelection: false
             ) { result in
                 importMiFitness(result)
