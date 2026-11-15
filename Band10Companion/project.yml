@@ -15,6 +15,7 @@ targets:
       - path: Sources
     dependencies:
       - package: ZIPFoundation
+        product: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.vasil.band10companion
