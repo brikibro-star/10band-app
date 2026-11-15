@@ -6,15 +6,16 @@ struct ContentView: View {
     @EnvironmentObject private var bluetooth: BandBluetoothManager
     @State private var pickerTarget: PickerTarget?
     @State private var importedKeys: [BandKey] = []
-    @State private var keyImportMessage = "Выбери папку Mi Fitness или отдельно manifest.sqlite"
+    @State private var keyImportMessage = "Импортируйте ZIP-архив Mi Fitness или папку с данными."
 
     private enum PickerTarget: String, Identifiable {
-        case folder, manifest
+        case folder, manifest, archive
         var id: String { rawValue }
         var contentType: UTType {
             switch self {
             case .folder: return .folder
             case .manifest: return UTType(filenameExtension: "sqlite") ?? .data
+            case .archive: return UTType(filenameExtension: "zip") ?? .data
             }
     }
     }
@@ -62,6 +63,11 @@ struct ContentView: View {
                             pickerTarget = .folder
                         } label: {
                             Label("Выбрать папку Mi Fitness", systemImage: "folder")
+                        }
+                        Button {
+                            pickerTarget = .archive
+                        } label: {
+                            Label("Импортировать ZIP-архив Mi Fitness", systemImage: "doc.zipper")
                         }
                         Button {
                             pickerTarget = .manifest
@@ -149,7 +155,7 @@ struct ContentView: View {
             }
             importedKeys = keys
             Vault.importedBandKeys = keys.map(\.hex)
-            keyImportMessage = "Найдено ключей: \(keys.count). Секреты сохранены в Keychain."
+            keyImportMessage = "Найден ключ обычного Smart Band 10. Секрет сохранён в Keychain."
         } catch {
             keyImportMessage = "Ошибка импорта: \(error.localizedDescription)"
         }
