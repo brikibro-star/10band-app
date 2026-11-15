@@ -1,43 +1,33 @@
 import SwiftUI
-import UniformTypeIdentifiers
-import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var bluetooth: BandBluetoothManager
-    @State private var pickerTarget: PickerTarget?
-    @State private var importedKeys: [BandKey] = []
-    @State private var keyImportMessage = "Импортируйте ZIP-архив Mi Fitness или папку с данными."
+    @State private var authKey = ""
+    @State private var keyMessage = ""
+    @State private var keySaved = !Vault.importedBandKeys.isEmpty
 
-    private enum PickerTarget: String, Identifiable {
-        case folder, manifest, archive
-        var id: String { rawValue }
-        var contentType: UTType {
-            switch self {
-            case .folder: return .folder
-            case .manifest: return UTType(filenameExtension: "sqlite") ?? .data
-            case .archive: return UTType(filenameExtension: "zip") ?? .data
-            }
-    }
+    private var normalizedKey: String {
+        authKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "")
+            .lowercased()
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 14) {
-                VStack(spacing: 5) {
+                VStack(spacing: 6) {
                     Text("XIAOMI SMART BAND 10")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                     if bluetooth.isAuthenticated {
                         Label("Авторизация успешна", systemImage: "checkmark.seal.fill")
-                            .font(.caption)
-                            .foregroundStyle(.green)
+                            .font(.caption).foregroundStyle(.green)
                     }
                     if let battery = bluetooth.batteryLevel {
                         Text("Заряд браслета: \(battery)%")
                             .font(.subheadline.weight(.semibold))
                     }
                     Text(bluetooth.status)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .padding(.top, 12)
@@ -47,49 +37,33 @@ struct ContentView: View {
                         bluetooth.isScanning ? bluetooth.stopScan() : bluetooth.startScan()
                     }
                     .buttonStyle(.borderedProminent)
-
                     if bluetooth.isConnected {
                         Button("Отключить") { bluetooth.disconnect() }
                             .buttonStyle(.bordered)
                     }
-
                     Button("Очистить") { bluetooth.clearResults() }
                         .buttonStyle(.bordered)
                 }
 
                 List {
-                    Section("Авторизация Mi Fitness") {
-                        Button {
-                            pickerTarget = .folder
-                        } label: {
-                            Label("Выбрать папку Mi Fitness", systemImage: "folder")
+                    Section("Ключ авторизации браслета") {
+                        SecureField("Вставьте 32 символа ключа", text: $authKey)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .font(.system(.body, design: .monospaced))
+                        Button("Сохранить ключ на iPhone") {
+                            saveAuthKey()
                         }
-                        Button {
-                            pickerTarget = .archive
-                        } label: {
-                            Label("Импортировать ZIP-архив Mi Fitness", systemImage: "doc.zipper")
+                        .disabled(normalizedKey.count != 32 || !normalizedKey.allSatisfy(\.isHexDigit))
+                        if keySaved {
+                            Label("Ключ сохранён в Keychain", systemImage: "checkmark.shield.fill")
+                                .foregroundStyle(.green)
                         }
-                        Button {
-                            pickerTarget = .manifest
-                        } label: {
-                            Label("Выбрать manifest.sqlite", systemImage: "doc")
+                        if !keyMessage.isEmpty {
+                            Text(keyMessage).font(.caption).foregroundStyle(.secondary)
                         }
-                        Text(keyImportMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ForEach(Array(importedKeys.enumerated()), id: \.offset) { _, key in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(key.name)
-                                    Text(key.masked)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "checkmark.shield.fill")
-                                    .foregroundStyle(.green)
-                            }
-                        }
+                        Text("Вставьте ключ из текстового файла. Он хранится только на этом iPhone и не отправляется в интернет.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
 
                     Section("Найденные устройства") {
@@ -105,8 +79,7 @@ struct ContentView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(device.name).foregroundStyle(.primary)
                                         Text("RSSI: \(device.rssi) dBm")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                     Image(systemName: "dot.radiowaves.left.and.right")
@@ -121,8 +94,7 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(bluetooth.gattDetails, id: \.self) { row in
-                                Text(row)
-                                    .font(.system(.caption2, design: .monospaced))
+                                Text(row).font(.system(.caption2, design: .monospaced))
                                     .textSelection(.enabled)
                             }
                         }
@@ -131,71 +103,22 @@ struct ContentView: View {
                 .listStyle(.insetGrouped)
             }
             .navigationTitle("Band 10 Companion")
-            .sheet(item: $pickerTarget) { target in
-                SystemDocumentPicker(contentType: target.contentType) { result in
-                    pickerTarget = nil
-                    switch result {
-                    case .success(let url):
-                        importKeys(from: url)
-                    case .failure(let error):
-                        keyImportMessage = "Выбор отменён или не удался: \(error.localizedDescription)"
-                    }
-                }
-                .ignoresSafeArea()
-            }
         }
     }
 
-    private func importKeys(from url: URL) {
-        do {
-            let keys = try KeyLoader.load(from: url)
-            guard !keys.isEmpty else {
-                keyImportMessage = "В выбранном месте ключ не найден."
-                return
-            }
-            let imported = keys.map(\.hex)
-            Vault.importedBandKeys = imported
-            guard Vault.importedBandKeys == imported else {
-                keyImportMessage = "Ключ найден, но iOS не подтвердила его сохранение в Keychain. Проверьте настройки устройства и повторите импорт."
-                return
-            }
-            importedKeys = keys
-            keyImportMessage = "Ключ обычного Smart Band 10 найден и сохранён в защищённом хранилище iPhone."
-        } catch {
-            keyImportMessage = "Ошибка импорта: \(error.localizedDescription)"
+    private func saveAuthKey() {
+        guard normalizedKey.count == 32, normalizedKey.allSatisfy(\.isHexDigit) else {
+            keyMessage = "Нужен ключ из 32 шестнадцатеричных символов."
+            return
         }
-    }
-}
-
-private struct SystemDocumentPicker: UIViewControllerRepresentable {
-    let contentType: UTType
-    let completion: (Result<URL, Error>) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(completion: completion)
-    }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [contentType], asCopy: false)
-        picker.delegate = context.coordinator
-        picker.allowsMultipleSelection = false
-        return picker
-    }
-
-    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let completion: (Result<URL, Error>) -> Void
-        init(completion: @escaping (Result<URL, Error>) -> Void) {
-            self.completion = completion
+        Vault.importedBandKeys = [normalizedKey]
+        guard Vault.importedBandKeys == [normalizedKey] else {
+            keySaved = false
+            keyMessage = "iOS не подтвердила сохранение в Keychain. Повторите попытку."
+            return
         }
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
-            completion(.success(url))
-        }
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            completion(.failure(NSError(domain: "Band10Companion.DocumentPicker", code: 1,
-                                        userInfo: [NSLocalizedDescriptionKey: "Выбор отменён"])))
-        }
+        authKey = ""
+        keySaved = true
+        keyMessage = "Ключ успешно сохранён. Теперь можно искать браслет."
     }
 }
