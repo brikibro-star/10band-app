@@ -32,7 +32,8 @@ jobs:
         working-directory: Band10Companion
         run: |
           mkdir -p ../build
-          swiftc Sources/MiProtocol.swift Tests/ProtocolSmoke.swift -o ../build/protocol-smoke-tests
+          cp Tests/ProtocolSmoke.swift ../build/main.swift
+          swiftc Sources/MiProtocol.swift ../build/main.swift -o ../build/protocol-smoke-tests
           ../build/protocol-smoke-tests
 
       - name: Build unsigned device app
