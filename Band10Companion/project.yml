@@ -1,0 +1,21 @@
+name: Band10Companion
+options:
+  bundleIdPrefix: dev.vasil
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  Band10Companion:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.vasil.band10companion
+        PRODUCT_NAME: Band10Companion
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Band 10 Companion"
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Bluetooth нужен для поиска и подключения Xiaomi Smart Band 10."
+        INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription: "Bluetooth используется для обмена данными с Xiaomi Smart Band 10."
