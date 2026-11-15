@@ -18,6 +18,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var isConnected = false
     @Published private(set) var isAuthenticated = false
     @Published private(set) var batteryLevel: Int?
+    @Published private(set) var logEntries: [String] = []
 
     private let bandService = CBUUID(string: "FE95")
     private let notifyUUID = CBUUID(string: "005E")
@@ -37,12 +38,27 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     private var connectionTimeout: DispatchWorkItem?
     private var connectionTimedOut = false
 
+    private func log(_ message: String) {
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        logEntries.append("[\\(stamp)] \\(message)")
+        if logEntries.count > 1500 { logEntries.removeFirst(logEntries.count - 1500) }
+    }
+
+    func exportLog() -> URL? {
+        let header = "Band 10 Companion BLE diagnostic report\\nDevice: iPhone / iOS\\nCentral state: \\(stateDescription)\\nStatus: \\(status)\\nConnected: \\(isConnected)\\nAuthenticated: \\(isAuthenticated)\\n\\n"
+        let content = header + logEntries.joined(separator: "\\n")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Band10-BLE-Report-\\(Int(Date().timeIntervalSince1970)).txt")
+        do { try content.write(to: url, atomically: true, encoding: .utf8); return url }
+        catch { log("LOG EXPORT ERROR: \\(error.localizedDescription)"); return nil }
+    }
+
     override init() {
         super.init()
         central = CBCentralManager(delegate: self, queue: .main)
     }
 
     func startScan() {
+        log("SCAN requested; central state=\\(central.state.rawValue) (\\(stateDescription))")
         guard central.state == .poweredOn else {
             status = "Bluetooth недоступен: \(stateDescription)"
             return
@@ -52,6 +68,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
         gattDetails.removeAll()
         isScanning = true
         status = "Поиск Xiaomi Smart Band 10…"
+        log("SCAN started; service filter=\\(bandService.uuidString)")
         central.scanForPeripherals(withServices: [bandService],
                                    options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
     }
@@ -96,7 +113,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
             guard let self, let peripheral,
                   self.connectedPeripheral?.identifier == peripheral.identifier,
                   !self.isConnected else { return }
-            self.connectionTimedOut = true
+            self.log("CONNECT TIMEOUT after 15s; peripheral id=\\(peripheral.identifier.uuidString); central state=\\(self.central.state.rawValue)")\n            self.connectionTimedOut = true
             self.status = "Браслет не ответил за 15 секунд. Проверьте Bluetooth и повторите поиск."
             self.central.cancelPeripheralConnection(peripheral)
         }
@@ -130,7 +147,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     }
 
     private func startSession() {
-        status = "BLE-канал открыт. Запуск протокола…"
+        log("PROTOCOL session start; notify=\\(notifyCharacteristic?.uuid.uuidString ?? "nil"); write=\\(writeCharacteristic?.uuid.uuidString ?? "nil")")\n        status = "BLE-канал открыт. Запуск протокола…"
         sendFrame(MiFrame.encode(kind: MiFrame.kindSessionConfig, seq: 0,
                                  payload: MiFrame.startSessionPayload))
     }
@@ -145,7 +162,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
             return
         }
         phoneNonce = nonce
-        status = "Проверка ключа браслета…"
+        log("AUTH started; candidate key count=\\(candidateKeys.count); key bytes not logged")\n        status = "Проверка ключа браслета…"
         sendCommand(MiAuth.nonceCommand(phoneNonce: nonce), encrypted: false)
     }
 
@@ -255,7 +272,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
 
 extension BandBluetoothManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        status = central.state == .poweredOn
+        log("CENTRAL state changed: raw=\\(central.state.rawValue), description=\\(stateDescription), authorization=\\(CBManager.authorization.rawValue)")\n        status = central.state == .poweredOn
             ? "Bluetooth готов. Можно искать браслет."
             : "Bluetooth: \(stateDescription)"
     }
@@ -264,7 +281,7 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
                         didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any],
                         rssi RSSI: NSNumber) {
-        let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String\n        log("DISCOVER id=\\(peripheral.identifier.uuidString); name=\\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\\(RSSI); connectable=\\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\\((advertisementData[CBAdvertisementDataServiceUUIDs] as? [CBUUID])?.map(\\.uuidString).joined(separator: ",") ?? "none")")
         let name = peripheral.name ?? advertisedName ?? "Xiaomi BLE device"
         peripherals[peripheral.identifier] = peripheral
         let device = BandDevice(id: peripheral.identifier, name: name, rssi: RSSI.intValue)
