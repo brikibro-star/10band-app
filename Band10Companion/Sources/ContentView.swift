@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     var body: some View {
@@ -11,7 +12,7 @@ struct ContentView: View {
                 .tabItem { Label("Ключ", systemImage: "key.horizontal") }
         }
         .tint(.blue)
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
     }
 }
 
@@ -21,45 +22,44 @@ private struct DevicesTab: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Xiaomi Smart Band 10")
-                            .font(.title2.weight(.bold))
+                            .font(.system(size: 20, weight: .bold))
                         Text(bluetooth.status)
-                            .font(.body)
+                            .font(.system(size: 14))
                             .foregroundStyle(bluetooth.isConnected ? .green : .secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(14)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
 
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Button {
                             bluetooth.isScanning ? bluetooth.stopScan() : bluetooth.startScan()
                         } label: {
-                            Label(bluetooth.isScanning ? "Остановить поиск" : "Найти браслет",
+                            Label(bluetooth.isScanning ? "Стоп" : "Найти браслет",
                                   systemImage: bluetooth.isScanning ? "stop.circle" : "antenna.radiowaves.left.and.right")
+                                .font(.system(size: 14, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
+                        .controlSize(.regular)
 
                         if bluetooth.isConnected || bluetooth.isConnecting {
-                            Button("Отключить", role: .destructive) {
-                                bluetooth.disconnect()
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
+                            Button("Отключить", role: .destructive) { bluetooth.disconnect() }
+                                .font(.system(size: 14))
+                                .buttonStyle(.bordered)
+                                .controlSize(.regular)
                         }
                     }
 
                     HStack {
-                        Text("Найденные браслеты")
-                            .font(.headline)
+                        Text("Найденные браслеты").font(.system(size: 16, weight: .semibold))
                         Spacer()
                         Text("\(bluetooth.devices.count)")
-                            .font(.subheadline.monospacedDigit())
+                            .font(.system(size: 13, design: .rounded).monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
 
@@ -67,76 +67,59 @@ private struct DevicesTab: View {
                         ContentUnavailableView(
                             "Браслет пока не найден",
                             systemImage: "dot.radiowaves.left.and.right",
-                            description: Text("Нажмите «Найти браслет». В списке будут отображаться только устройства с рекламным идентификатором Xiaomi FE95.")
+                            description: Text("Нажмите «Найти браслет». Отображаются только устройства с идентификатором Xiaomi FE95.")
+                                .font(.system(size: 13))
                         )
-                        .padding(.top, 12)
                     } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(bluetooth.devices) { device in
-                                deviceCard(device)
-                            }
+                        LazyVStack(spacing: 9) {
+                            ForEach(bluetooth.devices) { device in deviceCard(device) }
                         }
                     }
-
-                    if bluetooth.isAuthenticated {
-                        Label("Авторизация выполнена", systemImage: "checkmark.seal.fill")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.green)
-                    } else if bluetooth.isConnected {
-                        Label("Bluetooth подключён; авторизация ещё не завершена", systemImage: "lock")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 }
-                .padding(16)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Устройства")
+            .navigationTitle("Браслет")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         bluetooth.clearResults()
                         bluetooth.startScan()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
+                    } label: { Image(systemName: "arrow.clockwise") }
                     .accessibilityLabel("Обновить поиск")
                 }
             }
         }
     }
 
-    @ViewBuilder
     private func deviceCard(_ device: BandDevice) -> some View {
         let isActive = bluetooth.activePeripheralID == device.id
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "watchface.applewatch.case")
-                    .font(.system(size: 30))
+                    .font(.system(size: 25))
                     .foregroundStyle(isActive ? .green : .blue)
-                    .frame(width: 40)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(device.name == "Xiaomi BLE device" ? "Xiaomi Smart Band 10 (FE95)" : device.name)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(device.name == "Xiaomi BLE device" ? "Xiaomi Smart Band 10" : device.name)
+                        .font(.system(size: 15, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
                     Text("Сигнал: \(device.rssi) dBm")
-                        .font(.subheadline)
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                     Text(isActive ? bluetooth.status : "Обнаружен • готов к подключению")
-                        .font(.subheadline)
+                        .font(.system(size: 12))
                         .foregroundStyle(isActive && bluetooth.isConnected ? .green : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
                 Spacer(minLength: 0)
             }
-
             if isActive && bluetooth.isAuthenticated {
                 Label("Авторизован", systemImage: "checkmark.seal.fill")
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.green)
             } else {
                 Button {
@@ -144,17 +127,19 @@ private struct DevicesTab: View {
                 } label: {
                     Label(isActive && bluetooth.isConnecting ? "Подключение…" : "Подключить",
                           systemImage: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 13, weight: .medium))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .disabled(bluetooth.isConnecting || (isActive && bluetooth.isConnected))
             }
         }
-        .padding(16)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background, in: RoundedRectangle(cornerRadius: 16))
+        .background(.background, in: RoundedRectangle(cornerRadius: 14))
         .overlay {
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 14)
                 .stroke(isActive ? Color.blue.opacity(0.5) : Color.secondary.opacity(0.15), lineWidth: 1)
         }
     }
@@ -162,45 +147,47 @@ private struct DevicesTab: View {
 
 private struct DiagnosticTab: View {
     @EnvironmentObject private var bluetooth: BandBluetoothManager
-    @State private var reportURL: URL?
-    @State private var showShare = false
+    @State private var copied = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Состояние") {
                     statusRow("Bluetooth", value: bluetooth.isConnected ? "Подключён" : (bluetooth.isConnecting ? "Подключение…" : "Не подключён"))
-                    statusRow("Авторизация", value: bluetooth.isAuthenticated ? "Выполнена" : "Ожидает Auth Key / ответа браслета")
+                    statusRow("Авторизация", value: bluetooth.isAuthenticated ? "Выполнена" : "Не выполнена")
                     statusRow("Заряд", value: bluetooth.batteryLevel.map { "\($0)%" } ?? "Нет данных")
                     statusRow("Записей журнала", value: "\(bluetooth.logEntries.count)")
                 }
 
-                Section("GATT — все обнаруженные характеристики") {
+                Section("GATT — характеристики") {
                     if bluetooth.gattDetails.isEmpty {
-                        Text("Данные появятся после подключения и чтения GATT.")
+                        Text("Пока нет данных. Характеристики появятся после успешного BLE-подключения.")
+                            .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
                         ForEach(bluetooth.gattDetails, id: \.self) { row in
                             Text(row)
-                                .font(.system(size: 14, weight: .regular, design: .monospaced))
+                                .font(.system(size: 11, weight: .regular, design: .monospaced))
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .padding(.vertical, 3)
+                                .padding(.vertical, 2)
                         }
                     }
                 }
 
-                Section("Экспорт") {
+                Section("Отчёт") {
                     Button {
-                        reportURL = bluetooth.exportLog()
-                        showShare = reportURL != nil
+                        UIPasteboard.general.string = bluetooth.diagnosticReport
+                        copied = true
                     } label: {
-                        Label("Сформировать TXT-отчёт", systemImage: "square.and.arrow.up")
+                        Label(copied ? "Отчёт скопирован" : "Скопировать весь отчёт",
+                              systemImage: copied ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(.system(size: 14, weight: .semibold))
                     }
                     .disabled(bluetooth.logEntries.isEmpty)
-                    Text("В отчёт входят события Bluetooth, ошибки и полный список GATT-характеристик. Auth Key не экспортируется.")
-                        .font(.footnote)
+                    Text("Полный отчёт сразу копируется в буфер обмена. Вставьте его сюда сообщением. Auth Key не включается.")
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -208,70 +195,36 @@ private struct DiagnosticTab: View {
                 Section("Последние события") {
                     if bluetooth.logEntries.isEmpty {
                         Text("Журнал пока пуст.")
+                            .font(.system(size: 12))
                     } else {
-                        ForEach(bluetooth.logEntries.suffix(120), id: \.self) { entry in
+                        ForEach(bluetooth.logEntries.suffix(80), id: \.self) { entry in
                             Text(entry)
-                                .font(.system(size: 13, weight: .regular, design: .monospaced))
+                                .font(.system(size: 10, weight: .regular, design: .monospaced))
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .padding(.vertical, 3)
+                                .padding(.vertical, 2)
                         }
                     }
                 }
             }
-            .font(.body)
+            .font(.system(size: 13))
             .listStyle(.insetGrouped)
-            .navigationTitle("Диагностика")
+            .navigationTitle("Отчёт")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showShare) {
-                if let reportURL {
-                    ShareSheetView(url: reportURL)
-                        .presentationDetents([.medium, .large])
-                        .presentationDragIndicator(.visible)
-                }
-            }
         }
     }
 
     private func statusRow(_ title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.subheadline).foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).foregroundStyle(.secondary)
+            Spacer(minLength: 8)
             Text(value)
-                .font(.body)
+                .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
-        .padding(.vertical, 3)
-    }
-}
-
-private struct ShareSheetView: View {
-    let url: URL
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 18) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.blue)
-                Text("Отчёт готов")
-                    .font(.title2.bold())
-                Text("Band10-BLE-Report.txt содержит диагностические события и полный список найденных GATT-характеристик.")
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                ShareLink(item: url) {
-                    Label("Поделиться отчётом", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            }
-            .padding(24)
-            .navigationTitle("Экспорт")
-            .navigationBarTitleDisplayMode(.inline)
-        }
+        .font(.system(size: 12))
+        .padding(.vertical, 2)
     }
 }
 
@@ -292,42 +245,45 @@ private struct KeyTab: View {
                 Section("Auth Key браслета") {
                     if keySaved {
                         Label("Ключ сохранён в Keychain", systemImage: "checkmark.shield.fill")
+                            .font(.system(size: 13))
                             .foregroundStyle(.green)
                         Button("Заменить ключ") {
                             keySaved = false
                             authKey = ""
                             message = ""
                         }
+                        .font(.system(size: 14))
                     } else {
                         SecureField("32 шестнадцатеричных символа", text: $authKey)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .font(.system(size: 16, design: .monospaced))
+                            .font(.system(size: 14, design: .monospaced))
                         Button("Сохранить ключ на iPhone", action: saveAuthKey)
+                            .font(.system(size: 14))
                             .disabled(normalizedKey.count != 32 || !normalizedKey.allSatisfy(\.isHexDigit))
                     }
                     if !message.isEmpty {
                         Text(message)
-                            .font(.footnote)
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
                 Section("Зачем нужен ключ") {
-                    Text("Bluetooth-подключение и авторизация — разные этапы. Без Auth Key приложение может обнаружить браслет и прочитать его GATT-структуру, но защищённый обмен данными и получение заряда могут быть недоступны.")
-                        .font(.body)
+                    Text("Bluetooth-подключение и авторизация — разные этапы. Auth Key нужен для защищённого обмена данными после подключения.")
+                        .font(.system(size: 13))
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section {
                     Text("Ключ хранится локально в защищённом хранилище iOS и не записывается в диагностический отчёт.")
-                        .font(.footnote)
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .navigationTitle("Авторизация")
+            .navigationTitle("Ключ")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
