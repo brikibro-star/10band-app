@@ -155,14 +155,14 @@ final class BandBluetoothManager: NSObject, ObservableObject {
             guard let self, let peripheral,
                   self.connectedPeripheral?.identifier == peripheral.identifier,
                   !self.isConnected else { return }
-            self.log("CONNECT TIMEOUT after 30s; peripheral id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(self.central.state.rawValue)")
+            self.log("CONNECT TIMEOUT after 90s; peripheral id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(self.central.state.rawValue)")
             self.connectionTimedOut = true
-            self.status = "Тайм-аут BLE: запрос отменён, ожидаю завершения CoreBluetooth перед новой попыткой."
+            self.status = "Ожидание браслета: возможно, он занят Mi Fitness. Закройте Mi Fitness и подождите подключения."
             self.log("CANCEL requested by app timeout; stateBeforeCancel=\(peripheral.state.rawValue); awaiting callback remains true")
             self.central.cancelPeripheralConnection(peripheral)
         }
         connectionTimeout = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: timeout)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90, execute: timeout)
     }
 
     private var stateDescription: String {
