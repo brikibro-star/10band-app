@@ -35,6 +35,13 @@ struct ContentView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
+                    if bluetooth.isConnected {
+                        Button("Отключить") {
+                            bluetooth.disconnect()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
                     Button("Очистить") {
                         bluetooth.clearResults()
                     }
