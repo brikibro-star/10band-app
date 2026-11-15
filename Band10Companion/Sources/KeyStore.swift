@@ -29,8 +29,8 @@ struct BandKey: Equatable {
             .caseInsensitiveCompare(Self.targetName) == .orderedSame
     }
 
-    /// Never shows the key itself, only its last four characters.
-    var masked: String { String(repeating: "•", count: 8) + hex.suffix(4) }
+    /// Never exposes any part of the authentication secret in the interface.
+    var masked: String { "••••••••••••••••" }
 
     var data: Data {
         var out = Data()
@@ -296,13 +296,24 @@ enum KeyLoader {
         return keys
     }
 
-    /// NSKeyedArchiver references are CFKeyedArchiverUID values, which Swift only exposes
-    /// through their description: "<CFKeyedArchiverUID 0x…>{value = 12}".
+    /// PropertyListSerialization bridges NSKeyedArchiver UIDs to a private UID wrapper.
+    /// On current Apple platforms its reflected type is _NSKeyedArchiverUID and the index
+    /// is stored in the reflected child named "value" (not in CustomStringConvertible text).
     private static func uidIndex(_ value: Any) -> Int? {
-        let text = String(describing: value)
-        guard text.contains("CFKeyedArchiverUID"),
-              let range = text.range(of: #"value = (\d+)"#, options: .regularExpression) else { return nil }
-        return Int(text[range].dropFirst("value = ".count))
+        for child in Mirror(reflecting: value).children where child.label == "value" {
+            if let number = child.value as? NSNumber { return number.intValue }
+            if let number = child.value as? UInt32 { return Int(number) }
+            if let number = child.value as? UInt64 { return Int(exactly: number) }
+            if let number = child.value as? Int { return number }
+        }
+
+        // Compatibility fallback for Foundation versions that expose the UID in their description.
+        let description = String(describing: value)
+        guard description.contains("KeyedArchiverUID"),
+              let range = description.range(of: #"value = (\\d+)"#, options: .regularExpression) else {
+            return nil
+        }
+        return Int(description[range].dropFirst("value = ".count))
     }
 }
 
