@@ -58,7 +58,7 @@ enum KeyLoader {
     }
 
     /// Accepts the Mi Fitness folder (or any folder above the manifest, or the manifest itself)
-    /// and returns every device key found in the registerList_* entries.
+    /// and returns only auth keys belonging to the standard Xiaomi Smart Band 10.
     static func load(from url: URL) throws -> [BandKey] {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
