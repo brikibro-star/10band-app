@@ -18,6 +18,10 @@ struct ContentView: View {
                 VStack(spacing: 6) {
                     Text("XIAOMI SMART BAND 10")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
+                    if keySaved {
+                        Label("Ключ активен", systemImage: "checkmark.shield.fill")
+                            .font(.caption2.weight(.medium)).foregroundStyle(.green)
+                    }
                     if bluetooth.isAuthenticated {
                         Label("Авторизация успешна", systemImage: "checkmark.seal.fill")
                             .font(.caption).foregroundStyle(.green)
@@ -46,6 +50,7 @@ struct ContentView: View {
                 }
 
                 List {
+                    if !keySaved {
                     Section("Ключ авторизации браслета") {
                         SecureField("Вставьте 32 символа ключа", text: $authKey)
                             .textInputAutocapitalization(.never)
@@ -64,6 +69,8 @@ struct ContentView: View {
                         }
                         Text("Вставьте ключ из текстового файла. Он хранится только на этом iPhone и не отправляется в интернет.")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+
                     }
 
                     Section("Найденные устройства") {
@@ -123,4 +130,4 @@ struct ContentView: View {
     }
 }
 
-// Build refresh: manual Band 10 auth-key entry UI.
+// Build refresh: hide saved auth-key form and show active indicator.
