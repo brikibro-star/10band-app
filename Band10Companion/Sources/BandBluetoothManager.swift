@@ -50,8 +50,21 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     var diagnosticReport: String {
         let peripheralState = connectedPeripheral.map { String($0.state.rawValue) } ?? "нет"
         let activeID = activePeripheralID?.uuidString ?? "нет"
-        let header = "Band 10 Companion BLE diagnostic report\\nDevice: iPhone / iOS\\nCentral state: \\(stateDescription)\\nStatus: \\(status)\\nConnected: \\(isConnected)\\nConnecting: \\(isConnecting)\\nPeripheral state: \\(peripheralState) (0=disconnected, 1=connecting, 2=connected, 3=disconnecting)\\nActive peripheral: \\(activeID)\\nAuthenticated: \\(isAuthenticated)\\nAuth Key available: \\(!Vault.importedBandKeys.isEmpty)\\nGATT characteristics: \\(gattDetails.count)\\n\\n"
-        return header + gattDetails.joined(separator: "\\n") + (gattDetails.isEmpty ? "" : "\\n\\n") + logEntries.joined(separator: "\\n")
+        let header = """
+        Band 10 Companion BLE diagnostic report
+        Device: iPhone / iOS
+        Central state: \(stateDescription)
+        Status: \(status)
+        Connected: \(isConnected)
+        Connecting: \(isConnecting)
+        Peripheral state: \(peripheralState) (0=disconnected, 1=connecting, 2=connected, 3=disconnecting)
+        Active peripheral: \(activeID)
+        Authenticated: \(isAuthenticated)
+        Auth Key available: \(!Vault.importedBandKeys.isEmpty)
+        GATT characteristics: \(gattDetails.count)
+
+        """
+        return header + gattDetails.joined(separator: "\n") + (gattDetails.isEmpty ? "" : "\n\n") + logEntries.joined(separator: "\n")
     }
 
     func exportLog() -> URL? {
