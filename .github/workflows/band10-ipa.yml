@@ -1,0 +1,64 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/band10-companion
+    paths:
+      - "Band10Companion/**"
+      - ".github/workflows/band10-ipa.yml"
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: Band10Companion
+        run: xcodegen generate
+
+      - name: Run protocol smoke tests
+        working-directory: Band10Companion
+        run: |
+          mkdir -p ../build
+          swiftc Sources/MiProtocol.swift Tests/ProtocolSmoke.swift -o ../build/protocol-smoke-tests
+          ../build/protocol-smoke-tests
+
+      - name: Build unsigned device app
+        working-directory: Band10Companion
+        run: |
+          xcodebuild \
+            -project Band10Companion.xcodeproj \
+            -scheme Band10Companion \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ../build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/DerivedData/Build/Products/Release-iphoneos/Band10Companion.app build/Payload/
+          cd build
+          /usr/bin/zip -r Band10Companion-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Band10Companion-unsigned-ipa
+          path: build/Band10Companion-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
