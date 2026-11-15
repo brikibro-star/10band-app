@@ -122,3 +122,5 @@ struct ContentView: View {
         keyMessage = "Ключ успешно сохранён. Теперь можно искать браслет."
     }
 }
+
+// Build refresh: manual Band 10 auth-key entry UI.
