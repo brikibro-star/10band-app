@@ -1,11 +1,23 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var bluetooth: BandBluetoothManager
-    @State private var showingKeyFolderPicker = false
+    @State private var pickerTarget: PickerTarget?
     @State private var importedKeys: [BandKey] = []
-    @State private var keyImportMessage = "Выбери папку Mi Fitness или файл manifest.sqlite"
+    @State private var keyImportMessage = "Выбери папку Mi Fitness или отдельно manifest.sqlite"
+
+    private enum PickerTarget: String, Identifiable {
+        case folder, manifest
+        var id: String { rawValue }
+        var contentType: UTType {
+            switch self {
+            case .folder: return .folder
+            case .manifest: return UTType(filenameExtension: "sqlite") ?? .data
+            }
+    }
+    }
 
     var body: some View {
         NavigationStack {
@@ -36,30 +48,29 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
 
                     if bluetooth.isConnected {
-                        Button("Отключить") {
-                            bluetooth.disconnect()
-                        }
-                        .buttonStyle(.bordered)
+                        Button("Отключить") { bluetooth.disconnect() }
+                            .buttonStyle(.bordered)
                     }
 
-                    Button("Очистить") {
-                        bluetooth.clearResults()
-                    }
-                    .buttonStyle(.bordered)
+                    Button("Очистить") { bluetooth.clearResults() }
+                        .buttonStyle(.bordered)
                 }
 
                 List {
                     Section("Авторизация Mi Fitness") {
                         Button {
-                            showingKeyFolderPicker = true
+                            pickerTarget = .folder
                         } label: {
-                            Label("Импортировать ключ из Mi Fitness", systemImage: "key.horizontal")
+                            Label("Выбрать папку Mi Fitness", systemImage: "folder")
                         }
-                        if !keyImportMessage.isEmpty {
-                            Text(keyImportMessage)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        Button {
+                            pickerTarget = .manifest
+                        } label: {
+                            Label("Выбрать manifest.sqlite", systemImage: "doc")
                         }
+                        Text(keyImportMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         ForEach(Array(importedKeys.enumerated()), id: \.offset) { _, key in
                             HStack {
                                 VStack(alignment: .leading, spacing: 3) {
@@ -80,15 +91,13 @@ struct ContentView: View {
                             Text("Нажмите «Найти браслет». Держите браслет рядом с iPhone.")
                                 .foregroundStyle(.secondary)
                         }
-
                         ForEach(bluetooth.devices) { device in
                             Button {
                                 bluetooth.connect(to: device.id)
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(device.name)
-                                            .foregroundStyle(.primary)
+                                        Text(device.name).foregroundStyle(.primary)
                                         Text("RSSI: \(device.rssi) dBm")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
@@ -116,25 +125,66 @@ struct ContentView: View {
                 .listStyle(.insetGrouped)
             }
             .navigationTitle("Band 10 Companion")
-            .fileImporter(
-                isPresented: $showingKeyFolderPicker,
-                allowedContentTypes: [.folder, .data],
-                allowsMultipleSelection: false
-            ) { result in
-                do {
-                    guard let selectedURL = try result.get().first else { return }
-                    let keys = try KeyLoader.load(from: selectedURL)
-                    guard !keys.isEmpty else {
-                        keyImportMessage = "В выбранном месте Mi Fitness ключ браслета не найден."
-                        return
+            .sheet(item: $pickerTarget) { target in
+                SystemDocumentPicker(contentType: target.contentType) { result in
+                    pickerTarget = nil
+                    switch result {
+                    case .success(let url):
+                        importKeys(from: url)
+                    case .failure(let error):
+                        keyImportMessage = "Выбор отменён или не удался: \(error.localizedDescription)"
                     }
-                    importedKeys = keys
-                    Vault.importedBandKeys = keys.map(\.hex)
-                    keyImportMessage = "Найдено ключей: \(keys.count). Секреты сохранены в Keychain."
-                } catch {
-                    keyImportMessage = "Ошибка импорта: \(error.localizedDescription)"
                 }
+                .ignoresSafeArea()
             }
+        }
+    }
+
+    private func importKeys(from url: URL) {
+        do {
+            let keys = try KeyLoader.load(from: url)
+            guard !keys.isEmpty else {
+                keyImportMessage = "В выбранном месте ключ не найден."
+                return
+            }
+            importedKeys = keys
+            Vault.importedBandKeys = keys.map(\.hex)
+            keyImportMessage = "Найдено ключей: \(keys.count). Секреты сохранены в Keychain."
+        } catch {
+            keyImportMessage = "Ошибка импорта: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct SystemDocumentPicker: UIViewControllerRepresentable {
+    let contentType: UTType
+    let completion: (Result<URL, Error>) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(completion: completion)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [contentType], asCopy: false)
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let completion: (Result<URL, Error>) -> Void
+        init(completion: @escaping (Result<URL, Error>) -> Void) {
+            self.completion = completion
+        }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            completion(.success(url))
+        }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            completion(.failure(NSError(domain: "Band10Companion.DocumentPicker", code: 1,
+                                        userInfo: [NSLocalizedDescriptionKey: "Выбор отменён"])))
         }
     }
 }
