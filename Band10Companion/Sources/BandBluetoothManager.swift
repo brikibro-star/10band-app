@@ -286,7 +286,7 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
                         advertisementData: [String: Any],
                         rssi RSSI: NSNumber) {
         let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\((advertisementData[CBAdvertisementDataServiceUUIDs] as? [CBUUID])?.map(\.uuidString).joined(separator: ",") ?? "none")")
+        log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\((advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.map(\.uuidString).joined(separator: ",") ?? "none")")
         let name = peripheral.name ?? advertisedName ?? "Xiaomi BLE device"
         peripherals[peripheral.identifier] = peripheral
         let device = BandDevice(id: peripheral.identifier, name: name, rssi: RSSI.intValue)
