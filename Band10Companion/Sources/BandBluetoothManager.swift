@@ -447,11 +447,15 @@ extension BandBluetoothManager: CBPeripheralDelegate {
             gattDetails.append("CHAR  \(characteristic.uuid.uuidString) [\(flags.joined(separator: ", "))]")
         }
 
+        // Band 10 FE95 transport uses distinct characteristics:
+        // 005E for notifications and 005F for outgoing commands.
         let notifyCandidate = characteristics.first {
-            $0.properties.contains(.notify) || $0.properties.contains(.indicate)
+            $0.uuid == notifyUUID &&
+            ($0.properties.contains(.notify) || $0.properties.contains(.indicate))
         }
         let writeCandidate = characteristics.first {
-            $0.properties.contains(.writeWithoutResponse) || $0.properties.contains(.write)
+            $0.uuid == writeUUID &&
+            ($0.properties.contains(.writeWithoutResponse) || $0.properties.contains(.write))
         }
         if let notifyCandidate, let writeCandidate, notifyCharacteristic == nil, writeCharacteristic == nil {
             notifyCharacteristic = notifyCandidate
