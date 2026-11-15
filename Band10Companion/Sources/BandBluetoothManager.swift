@@ -16,6 +16,8 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var status = "Проверка Bluetooth…"
     @Published private(set) var isScanning = false
     @Published private(set) var isConnected = false
+    @Published private(set) var isConnecting = false
+    @Published private(set) var activePeripheralID: UUID?
     @Published private(set) var isAuthenticated = false
     @Published private(set) var batteryLevel: Int?
     @Published private(set) var logEntries: [String] = []
@@ -64,7 +66,8 @@ final class BandBluetoothManager: NSObject, ObservableObject {
             return
         }
         devices.removeAll()
-        peripherals.removeAll()
+        peripherals = central.retrieveConnectedPeripherals(withServices: [bandService])
+            .reduce(into: [:]) { $0[$1.identifier] = $1 }
         gattDetails.removeAll()
         isScanning = true
         status = "Поиск Xiaomi Smart Band 10…"
@@ -92,22 +95,24 @@ final class BandBluetoothManager: NSObject, ObservableObject {
 
     func connect(to id: UUID) {
         guard let peripheral = peripherals[id] else { return }
+        guard peripheral.state != .connected, !isConnecting else { return }
         candidateKeys = Vault.importedBandKeys.compactMap { hex in
             guard hex.count == 32 else { return nil }
             return BandKey(hex: hex).data
         }
-        guard !candidateKeys.isEmpty else {
-            status = "Сначала вставьте и сохраните ключ авторизации в разделе выше."
-            return
-        }
         stopScan()
-        if let current = connectedPeripheral { central.cancelPeripheralConnection(current) }
+        if let current = connectedPeripheral, current.identifier != id {
+            central.cancelPeripheralConnection(current)
+        }
         resetSession()
         connectionTimeout?.cancel()
         connectionTimedOut = false
         connectedPeripheral = peripheral
-        status = "Подключение к браслету…"
-        log("CONNECT requested; id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? "nil"); peripheralState=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); rssi=\(devices.first(where: { $0.id == id })?.rssi ?? 0)")
+        activePeripheralID = id
+        isConnecting = true
+        isConnected = false
+        status = "Подключение к Xiaomi Smart Band 10…"
+        log("CONNECT requested; id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? "nil"); peripheralState=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); rssi=\(devices.first(where: { $0.id == id })?.rssi ?? 0); authKeyAvailable=\(!candidateKeys.isEmpty)")
         central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnConnectionKey: true,
                                                CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
 
@@ -117,7 +122,8 @@ final class BandBluetoothManager: NSObject, ObservableObject {
                   !self.isConnected else { return }
             self.log("CONNECT TIMEOUT after 30s; peripheral id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(self.central.state.rawValue)")
             self.connectionTimedOut = true
-            self.status = "Браслет не ответил за 15 секунд. Проверьте Bluetooth и повторите поиск."
+            self.isConnecting = false
+            self.status = "Тайм-аут подключения (30 с). Поднесите браслет ближе и повторите попытку."
             self.central.cancelPeripheralConnection(peripheral)
         }
         connectionTimeout = timeout
@@ -157,6 +163,11 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     }
 
     private func startAuthentication() {
+        guard !candidateKeys.isEmpty else {
+            status = "Bluetooth подключён. Для авторизации добавьте Auth Key во вкладке «Ключ»."
+            log("AUTH skipped; no Auth Key stored")
+            return
+        }
         var nonce = Data(count: 16)
         let result = nonce.withUnsafeMutableBytes {
             SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
@@ -290,7 +301,10 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
         let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
         let serviceUUIDs = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.map(\.uuidString).joined(separator: ",") ?? "none"
         let manufacturerBytes = (advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data)?.count ?? 0
-        let serviceDataKeys = (advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data])?.keys.map(\.uuidString).joined(separator: ",") ?? "none"
+        let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data] ?? [:]
+        let serviceDataKeys = serviceData.keys.map(\.uuidString).joined(separator: ",")
+        let isXiaomiCandidate = serviceData.keys.contains(bandService) || (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.contains(bandService) == true
+        guard isXiaomiCandidate else { return }
         let txPower = advertisementData[CBAdvertisementDataTxPowerLevelKey] ?? "unknown"
         log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\(serviceUUIDs); manufacturerDataBytes=\(manufacturerBytes); serviceDataUUIDs=\(serviceDataKeys); txPower=\(txPower)")
         let name = peripheral.name ?? advertisedName ?? "Xiaomi BLE device"
@@ -305,7 +319,13 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        guard connectedPeripheral?.identifier == peripheral.identifier else {
+            log("STALE DID CONNECT ignored; id=\(peripheral.identifier.uuidString)")
+            central.cancelPeripheralConnection(peripheral)
+            return
+        }
         log("DID CONNECT; id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue)")
+        isConnecting = false
         connectionTimeout?.cancel()
         connectionTimeout = nil
         connectionTimedOut = false
@@ -318,6 +338,8 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         log("DID FAIL TO CONNECT; id=\(peripheral.identifier.uuidString); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error))")
+        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+        isConnecting = false
         connectionTimeout?.cancel()
         connectionTimeout = nil
         isConnected = false
@@ -327,11 +349,17 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         log("DID DISCONNECT; id=\(peripheral.identifier.uuidString); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error))")
+        guard connectedPeripheral?.identifier == peripheral.identifier else {
+            log("STALE DISCONNECT ignored; active=\(connectedPeripheral?.identifier.uuidString ?? "nil")")
+            return
+        }
         connectionTimeout?.cancel()
         connectionTimeout = nil
         resetSession()
+        isConnecting = false
         isConnected = false
         connectedPeripheral = nil
+        activePeripheralID = nil
         if connectionTimedOut {
             status = "Тайм-аут BLE: браслет не завершил подключение за 15 секунд."
             connectionTimedOut = false
@@ -350,7 +378,8 @@ extension BandBluetoothManager: CBPeripheralDelegate {
         }
         for service in peripheral.services ?? [] {
             gattDetails.append("SERVICE  \(service.uuid.uuidString)")
-            peripheral.discoverCharacteristics([notifyUUID, writeUUID], for: service)
+            log("GATT characteristic discovery requested; service=\(service.uuid.uuidString); filter=all")
+            peripheral.discoverCharacteristics(nil, for: service)
         }
     }
 
@@ -371,15 +400,22 @@ extension BandBluetoothManager: CBPeripheralDelegate {
             if properties.contains(.notify) { flags.append("notify") }
             if properties.contains(.indicate) { flags.append("indicate") }
             gattDetails.append("CHAR  \(characteristic.uuid.uuidString) [\(flags.joined(separator: ", "))]")
-            if characteristic.uuid == notifyUUID { notifyCharacteristic = characteristic }
-            if characteristic.uuid == writeUUID { writeCharacteristic = characteristic }
+            if properties.contains(.notify) || properties.contains(.indicate) {
+                if notifyCharacteristic == nil { notifyCharacteristic = characteristic }
+            }
+            if properties.contains(.writeWithoutResponse) || properties.contains(.write) {
+                if writeCharacteristic == nil { writeCharacteristic = characteristic }
+            }
         }
-        guard let notifyCharacteristic, writeCharacteristic != nil else {
-            status = "Не найдены характеристики FE95/005E/005F."
-            return
+        if let notifyCharacteristic, let writeCharacteristic {
+            log("GATT transport selected; notify=\(notifyCharacteristic.uuid.uuidString); write=\(writeCharacteristic.uuid.uuidString)")
+            status = "Найдены характеристики связи. Проверяю протокол…"
+            peripheral.setNotifyValue(true, for: notifyCharacteristic)
+        } else {
+            let all = (service.characteristics ?? []).map { $0.uuid.uuidString }.joined(separator: ", ")
+            status = "GATT найден, но нет пары Notify/Write. Смотрите полный список характеристик в отчёте."
+            log("GATT transport pair incomplete; service=\(service.uuid.uuidString); characteristics=\(all)")
         }
-        status = "BLE-характеристики найдены. Включаю уведомления…"
-        peripheral.setNotifyValue(true, for: notifyCharacteristic)
     }
 
     func peripheral(_ peripheral: CBPeripheral,
