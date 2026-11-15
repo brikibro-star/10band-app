@@ -15,6 +15,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     @Published private(set) var gattDetails: [String] = []
     @Published private(set) var status = "Проверка Bluetooth…"
     @Published private(set) var isScanning = false
+    @Published private(set) var isConnected = false
     @Published private(set) var isAuthenticated = false
     @Published private(set) var batteryLevel: Int?
 
@@ -59,6 +60,12 @@ final class BandBluetoothManager: NSObject, ObservableObject {
         if central.state == .poweredOn { status = "Поиск остановлен" }
     }
 
+    func disconnect() {
+        guard let peripheral = connectedPeripheral else { return }
+        status = "Отключение от браслета…"
+        central.cancelPeripheralConnection(peripheral)
+    }
+
     func clearResults() {
         devices.removeAll()
         gattDetails.removeAll()
@@ -75,6 +82,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
             return
         }
         stopScan()
+        if let current = connectedPeripheral { central.cancelPeripheralConnection(current) }
         resetSession()
         connectedPeripheral = peripheral
         status = "Подключение к браслету…"
@@ -254,17 +262,22 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        isConnected = true
         status = "Соединение установлено. Поиск BLE-сервисов…"
         peripheral.delegate = self
         peripheral.discoverServices([bandService])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        isConnected = false
+        connectedPeripheral = nil
         status = "Ошибка подключения: \(error?.localizedDescription ?? "нет подробностей")"
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         resetSession()
+        isConnected = false
+        connectedPeripheral = nil
         status = "Соединение с браслетом разорвано."
     }
 }
