@@ -34,6 +34,8 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     private var sessionKeys: MiAuth.SessionKeys?
     private var candidateKeys: [Data] = []
     private var keyIndex = 0
+    private var connectionTimeout: DispatchWorkItem?
+    private var connectionTimedOut = false
 
     override init() {
         super.init()
@@ -84,9 +86,22 @@ final class BandBluetoothManager: NSObject, ObservableObject {
         stopScan()
         if let current = connectedPeripheral { central.cancelPeripheralConnection(current) }
         resetSession()
+        connectionTimeout?.cancel()
+        connectionTimedOut = false
         connectedPeripheral = peripheral
         status = "Подключение к браслету…"
         central.connect(peripheral, options: nil)
+
+        let timeout = DispatchWorkItem { [weak self, weak peripheral] in
+            guard let self, let peripheral,
+                  self.connectedPeripheral?.identifier == peripheral.identifier,
+                  !self.isConnected else { return }
+            self.connectionTimedOut = true
+            self.status = "Браслет не ответил за 15 секунд. Проверьте Bluetooth и повторите поиск."
+            self.central.cancelPeripheralConnection(peripheral)
+        }
+        connectionTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeout)
     }
 
     private var stateDescription: String {
@@ -262,6 +277,9 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        connectionTimeout?.cancel()
+        connectionTimeout = nil
+        connectionTimedOut = false
         isConnected = true
         status = "Соединение установлено. Поиск BLE-сервисов…"
         peripheral.delegate = self
@@ -269,16 +287,25 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        connectionTimeout?.cancel()
+        connectionTimeout = nil
         isConnected = false
         connectedPeripheral = nil
         status = "Ошибка подключения: \(error?.localizedDescription ?? "нет подробностей")"
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        connectionTimeout?.cancel()
+        connectionTimeout = nil
         resetSession()
         isConnected = false
         connectedPeripheral = nil
-        status = "Соединение с браслетом разорвано."
+        if connectionTimedOut {
+            status = "Тайм-аут BLE: браслет не завершил подключение за 15 секунд."
+            connectionTimedOut = false
+        } else {
+            status = "Соединение с браслетом разорвано."
+        }
     }
 }
 
