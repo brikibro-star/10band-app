@@ -232,6 +232,8 @@ private struct KeyTab: View {
     @State private var authKey = ""
     @State private var message = ""
     @State private var keySaved = !Vault.importedBandKeys.isEmpty
+    @State private var showingMiFitnessPicker = false
+    @State private var importedDeviceNames: [String] = []
 
     private var normalizedKey: String {
         authKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -242,12 +244,34 @@ private struct KeyTab: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Auth Key браслета") {
-                    if keySaved {
+                Section("Автоматическое получение ключа") {
+                    Button {
+                        showingMiFitnessPicker = true
+                    } label: {
+                        Label("Загрузить ключ из Mi Fitness", systemImage: "folder.badge.gearshape")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    Text("Выберите папку Mi Fitness в приложении «Файлы» или ZIP-архив этой папки. Приложение найдёт encryptKey для Smart Band 10 и сохранит его в защищённое хранилище.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !importedDeviceNames.isEmpty {
+                        ForEach(importedDeviceNames, id: \.self) { name in
+                            Label(name, systemImage: "checkmark.seal.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.green)
+                        }
+                    } else if keySaved {
                         Label("Ключ сохранён в Keychain", systemImage: "checkmark.shield.fill")
                             .font(.system(size: 13))
                             .foregroundStyle(.green)
-                        Button("Заменить ключ") {
+                    }
+                }
+
+                Section("Ручной ввод — запасной способ") {
+                    if keySaved {
+                        Button("Заменить ключ вручную") {
                             keySaved = false
                             authKey = ""
                             message = ""
@@ -262,22 +286,24 @@ private struct KeyTab: View {
                             .font(.system(size: 14))
                             .disabled(normalizedKey.count != 32 || !normalizedKey.allSatisfy(\.isHexDigit))
                     }
-                    if !message.isEmpty {
+                }
+
+                if !message.isEmpty {
+                    Section("Результат") {
                         Text(message)
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                     }
                 }
 
-                Section("Зачем нужен ключ") {
-                    Text("Bluetooth-подключение и авторизация — разные этапы. Auth Key нужен для защищённого обмена данными после подключения.")
-                        .font(.system(size: 13))
+                Section("Важно") {
+                    Text("Ключ извлекается из локальных файлов Mi Fitness, а не считывается по Bluetooth. После первого импорта приложение будет автоматически использовать сохранённый ключ при подключении. Не отвязывайте и не сбрасывайте браслет: это может изменить ключ.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Section {
-                    Text("Ключ хранится локально в защищённом хранилище iOS и не записывается в диагностический отчёт.")
+                    Text("Ключ остаётся на iPhone, не включается в диагностический отчёт и не отправляется на сервер.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -285,6 +311,44 @@ private struct KeyTab: View {
             }
             .navigationTitle("Ключ")
             .navigationBarTitleDisplayMode(.inline)
+            .fileImporter(
+                isPresented: $showingMiFitnessPicker,
+                allowedContentTypes: [.folder, .zip],
+                allowsMultipleSelection: false
+            ) { result in
+                importMiFitness(result)
+            }
+        }
+    }
+
+    private func importMiFitness(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let keys = try KeyLoader.load(from: url)
+            let hexKeys = keys.map(\.hex)
+            guard !hexKeys.isEmpty else {
+                message = "В выбранных файлах не найден ключ Smart Band 10."
+                return
+            }
+            Vault.importedBandKeys = hexKeys
+            guard Vault.importedBandKeys == Array(NSOrderedSet(array: hexKeys)) as? [String] else {
+                // The Keychain setter normalizes and removes duplicates; verify count and availability below.
+                guard !Vault.importedBandKeys.isEmpty else {
+                    message = "Не удалось сохранить ключи в Keychain."
+                    keySaved = false
+                    return
+                }
+                keySaved = true
+                importedDeviceNames = keys.map { "\($0.name)\($0.macSuffix.map { " • …\($0)" } ?? "")" }
+                message = "Найдено ключей: \(keys.count). Они сохранены. Теперь подключайтесь к браслету."
+                return
+            }
+            keySaved = true
+            importedDeviceNames = keys.map { "\($0.name)\($0.macSuffix.map { " • …\($0)" } ?? "")" }
+            message = "Найдено ключей: \(keys.count). Они сохранены. Теперь подключайтесь к браслету."
+        } catch {
+            message = "Не удалось извлечь ключ. \(error.localizedDescription)"
+            keySaved = !Vault.importedBandKeys.isEmpty
         }
     }
 
@@ -301,6 +365,7 @@ private struct KeyTab: View {
         }
         authKey = ""
         keySaved = true
+        importedDeviceNames = []
         message = "Ключ успешно сохранён. Переподключите браслет для авторизации."
     }
 }
