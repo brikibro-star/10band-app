@@ -39,6 +39,9 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     private var keyIndex = 0
     private var connectionTimeout: DispatchWorkItem?
     private var connectionTimedOut = false
+    private var awaitingConnectionCallback = false
+    private var latestRSSI: [UUID: (value: Int, date: Date)] = [:]
+    private var lastDisconnectDate: Date?
     private var gattPendingServices: Set<CBUUID> = []
 
     private func log(_ message: String) {
@@ -115,7 +118,16 @@ final class BandBluetoothManager: NSObject, ObservableObject {
 
     func connect(to id: UUID) {
         guard let peripheral = peripherals[id] else { return }
-        guard peripheral.state != .connected, !isConnecting else { return }
+        guard peripheral.state != .connected, !isConnecting, !awaitingConnectionCallback else {
+            log("CONNECT blocked; id=\(id.uuidString); peripheralState=\(peripheral.state.rawValue); isConnecting=\(isConnecting); awaitingCallback=\(awaitingConnectionCallback)")
+            return
+        }
+        if let lastDisconnectDate, Date().timeIntervalSince(lastDisconnectDate) < 4 {
+            let remaining = max(1, Int(4 - Date().timeIntervalSince(lastDisconnectDate)))
+            status = "Подождите \(remaining) сек. перед повторным подключением."
+            log("CONNECT blocked by 4s cooldown; remaining=\(remaining)s")
+            return
+        }
         candidateKeys = Vault.importedBandKeys.compactMap { hex in
             guard hex.count == 32 else { return nil }
             return BandKey(hex: hex).data
@@ -131,8 +143,11 @@ final class BandBluetoothManager: NSObject, ObservableObject {
         activePeripheralID = id
         isConnecting = true
         isConnected = false
+        awaitingConnectionCallback = true
         status = "Подключение к Xiaomi Smart Band 10…"
-        log("CONNECT requested; id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? "nil"); peripheralState=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); rssi=\(devices.first(where: { $0.id == id })?.rssi ?? 0); authKeyAvailable=\(!candidateKeys.isEmpty)")
+        let signal = latestRSSI[id]
+        let signalText = signal.map { "\($0.value) dBm at \(ISO8601DateFormatter().string(from: $0.date))" } ?? "unavailable"
+        log("CONNECT API call; id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? "nil"); peripheralStateBefore=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); latestRSSI=\(signalText); authKeyAvailable=\(!candidateKeys.isEmpty); awaitingCallback=\(awaitingConnectionCallback)")
         central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnConnectionKey: true,
                                                CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
 
@@ -142,8 +157,8 @@ final class BandBluetoothManager: NSObject, ObservableObject {
                   !self.isConnected else { return }
             self.log("CONNECT TIMEOUT after 30s; peripheral id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(self.central.state.rawValue)")
             self.connectionTimedOut = true
-            self.isConnecting = false
-            self.status = "Тайм-аут BLE: iOS не завершила подключение за 30 секунд. Проверьте, не подключён ли браслет к Mi Fitness, затем повторите попытку."
+            self.status = "Тайм-аут BLE: запрос отменён, ожидаю завершения CoreBluetooth перед новой попыткой."
+            self.log("CANCEL requested by app timeout; stateBeforeCancel=\(peripheral.state.rawValue); awaiting callback remains true")
             self.central.cancelPeripheralConnection(peripheral)
         }
         connectionTimeout = timeout
@@ -329,6 +344,7 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
         log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\(serviceUUIDs); manufacturerDataBytes=\(manufacturerBytes); serviceDataUUIDs=\(serviceDataKeys); txPower=\(txPower)")
         let name = peripheral.name ?? advertisedName ?? "Xiaomi BLE device"
         peripherals[peripheral.identifier] = peripheral
+        latestRSSI[peripheral.identifier] = (RSSI.intValue, Date())
         let device = BandDevice(id: peripheral.identifier, name: name, rssi: RSSI.intValue)
         if let index = devices.firstIndex(where: { $0.id == device.id }) {
             devices[index] = device
@@ -344,7 +360,8 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
             central.cancelPeripheralConnection(peripheral)
             return
         }
-        log("DID CONNECT; id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue)")
+        log("DID CONNECT; id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); awaitingCallback=\(awaitingConnectionCallback)")
+        awaitingConnectionCallback = false
         isConnecting = false
         connectionTimeout?.cancel()
         connectionTimeout = nil
@@ -357,7 +374,8 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        log("DID FAIL TO CONNECT; id=\(peripheral.identifier.uuidString); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error))")
+        log("DID FAIL TO CONNECT; id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error)); awaitingCallback=\(awaitingConnectionCallback)")
+        awaitingConnectionCallback = false
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
         isConnecting = false
         connectionTimeout?.cancel()
@@ -368,13 +386,15 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        log("DID DISCONNECT; id=\(peripheral.identifier.uuidString); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error))")
+        log("DID DISCONNECT; id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error)); wasConnecting=\(isConnecting); wasConnected=\(isConnected); awaitingCallback=\(awaitingConnectionCallback); timeoutRequested=\(connectionTimedOut)")
         guard connectedPeripheral?.identifier == peripheral.identifier else {
             log("STALE DISCONNECT ignored; active=\(connectedPeripheral?.identifier.uuidString ?? "nil")")
             return
         }
         connectionTimeout?.cancel()
         connectionTimeout = nil
+        lastDisconnectDate = Date()
+        awaitingConnectionCallback = false
         resetSession()
         isConnecting = false
         isConnected = false
