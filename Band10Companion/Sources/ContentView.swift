@@ -233,8 +233,7 @@ private struct KeyTab: View {
     @State private var authKey = ""
     @State private var message = ""
     @State private var keySaved = !Vault.importedBandKeys.isEmpty
-    @State private var showingFolderPicker = false
-    @State private var showingZipPicker = false
+    @State private var showingFilePicker = false
     @State private var importedDeviceNames: [String] = []
 
     private var normalizedKey: String {
@@ -248,18 +247,12 @@ private struct KeyTab: View {
             Form {
                 Section("Автоматическое получение ключа") {
                     Button {
-                        showingFolderPicker = true
+                        showingFilePicker = true
                     } label: {
-                        Label("Выбрать папку Mi Fitness", systemImage: "folder")
+                        Label("Выбрать manifest.sqlite или ZIP", systemImage: "doc")
                             .font(.system(size: 14, weight: .semibold))
                     }
-                    Button {
-                        showingZipPicker = true
-                    } label: {
-                        Label("Выбрать ZIP-архив", systemImage: "doc.zipper")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    Text("Выберите папку Mi Fitness в приложении «Файлы» или ZIP-архив этой папки. Приложение найдёт encryptKey для Smart Band 10 и сохранит его в защищённое хранилище.")
+                    Text("Вместо выбора всей папки выберите файл manifest.sqlite внутри Mi Fitness/MHWCache/.../VirtualDevice_registerList. Также можно выбрать ZIP-архив. Приложение извлечёт encryptKey для Smart Band 10 и сохранит его на iPhone.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -319,18 +312,11 @@ private struct KeyTab: View {
             }
             .navigationTitle("Ключ")
             .navigationBarTitleDisplayMode(.inline)
-            // Separate pickers: iOS Files reliably enables “Open” for a folder
-            // when the allowed type is folder-only, rather than a mixed folder/ZIP list.
+            // Select the small SQLite manifest directly; selecting the enclosing app
+            // container folder is unreliable in the iOS Files picker.
             .fileImporter(
-                isPresented: $showingFolderPicker,
-                allowedContentTypes: [.folder],
-                allowsMultipleSelection: false
-            ) { result in
-                importMiFitness(result)
-            }
-            .fileImporter(
-                isPresented: $showingZipPicker,
-                allowedContentTypes: [.zip],
+                isPresented: $showingFilePicker,
+                allowedContentTypes: [UTType(filenameExtension: "sqlite", conformingTo: .database) ?? .database, .zip],
                 allowsMultipleSelection: false
             ) { result in
                 importMiFitness(result)
