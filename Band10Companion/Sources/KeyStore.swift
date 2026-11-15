@@ -328,12 +328,13 @@ enum Vault {
          kSecAttrAccount as String: account]
     }
 
-    static func set(_ value: String, for account: String) {
+    @discardableResult
+    static func set(_ value: String, for account: String) -> Bool {
         SecItemDelete(query(account) as CFDictionary)
         var item = query(account)
         item[kSecValueData as String] = Data(value.utf8)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     static func get(_ account: String) -> String? {
