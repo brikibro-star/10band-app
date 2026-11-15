@@ -5,6 +5,7 @@ struct ContentView: View {
     @State private var authKey = ""
     @State private var keyMessage = ""
     @State private var keySaved = !Vault.importedBandKeys.isEmpty
+    @State private var diagnosticURL: URL?
 
     private var normalizedKey: String {
         authKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -91,6 +92,30 @@ struct ContentView: View {
                                     Spacer()
                                     Image(systemName: "dot.radiowaves.left.and.right")
                                 }
+                            }
+                        }
+                    }
+
+                    Section("Диагностика BLE") {
+                        HStack {
+                            Button("Сформировать отчёт") { diagnosticURL = bluetooth.exportLog() }
+                                .buttonStyle(.borderedProminent)
+                            if let diagnosticURL {
+                                ShareLink(item: diagnosticURL) {
+                                    Label("Поделиться TXT", systemImage: "square.and.arrow.up")
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        Text("Записей: \\(bluetooth.logEntries.count). В отчёте есть время событий, ошибки подключения, состояние Bluetooth и этапы GATT. Ключ авторизации не записывается.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if bluetooth.logEntries.isEmpty {
+                            Text("Журнал пока пуст. Запустите поиск и повторите подключение.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(bluetooth.logEntries.suffix(30), id: \\.self) { entry in
+                                Text(entry).font(.system(.caption2, design: .monospaced))
+                                    .textSelection(.enabled)
                             }
                         }
                     }
