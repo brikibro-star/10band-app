@@ -78,7 +78,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
             return BandKey(hex: hex).data
         }
         guard !candidateKeys.isEmpty else {
-            status = "Сначала импортируйте ключ из папки Mi Fitness."
+            status = "Сначала вставьте и сохраните ключ авторизации в разделе выше."
             return
         }
         stopScan()
