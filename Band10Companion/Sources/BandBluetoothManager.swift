@@ -68,9 +68,9 @@ final class BandBluetoothManager: NSObject, ObservableObject {
         gattDetails.removeAll()
         isScanning = true
         status = "Поиск Xiaomi Smart Band 10…"
-        log("SCAN started; service filter=\(bandService.uuidString)")
-        central.scanForPeripherals(withServices: [bandService],
-                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        log("SCAN started; service filter=none; mode=full BLE discovery")
+        central.scanForPeripherals(withServices: nil,
+                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
     }
 
     func stopScan() {
@@ -286,7 +286,11 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
                         advertisementData: [String: Any],
                         rssi RSSI: NSNumber) {
         let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\((advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.map(\.uuidString).joined(separator: ",") ?? "none")")
+        let serviceUUIDs = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.map(\.uuidString).joined(separator: ",") ?? "none"
+        let manufacturerBytes = (advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data)?.count ?? 0
+        let serviceDataKeys = (advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data])?.keys.map(\.uuidString).joined(separator: ",") ?? "none"
+        let txPower = advertisementData[CBAdvertisementDataTxPowerLevelKey] ?? "unknown"
+        log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\(serviceUUIDs); manufacturerDataBytes=\(manufacturerBytes); serviceDataUUIDs=\(serviceDataKeys); txPower=\(txPower)")
         let name = peripheral.name ?? advertisedName ?? "Xiaomi BLE device"
         peripherals[peripheral.identifier] = peripheral
         let device = BandDevice(id: peripheral.identifier, name: name, rssi: RSSI.intValue)
