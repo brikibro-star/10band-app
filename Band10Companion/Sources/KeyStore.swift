@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import SQLite3
+import ZIPFoundation
 
 /// One device entry from Mi Fitness's VirtualDevice_registerList.
 struct BandKey: Equatable {
@@ -49,7 +50,7 @@ enum KeyLoader {
 
         var errorDescription: String? {
             switch self {
-            case .noManifest: return String(localized: "No VirtualDevice_registerList/manifest.sqlite in the chosen folder.")
+            case .noManifest: return String(localized: "No Mi Fitness registerList manifest or supported ZIP archive was found.")
             case .unreadable(let why): return String(localized: "Couldn't read manifest.sqlite: \(why)")
             case .noKeys(let diagnostics): return String(localized: "No encryptKey found. Details: \(diagnostics)")
             }
@@ -61,6 +62,10 @@ enum KeyLoader {
     static func load(from url: URL) throws -> [BandKey] {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        if url.pathExtension.lowercased() == "zip" {
+            return try loadZip(from: url)
+        }
 
         var manifests: [URL] = []
         var isDirectory: ObjCBool = false
@@ -89,6 +94,62 @@ enum KeyLoader {
         }
         guard !keys.isEmpty else {
             throw Failure.noKeys("\(manifests.count) manifest; " + diagnostics.joined(separator: " | "))
+        }
+        return keys
+    }
+
+    /// Reads only the small registerList manifest and its SQLite sidecars from a ZIP.
+    /// Also supports the common Mi Fitness export layout where the selected ZIP contains Xiadata.zip.
+    private static func loadZip(from url: URL) throws -> [BandKey] {
+        let fm = FileManager.default
+        let work = fm.temporaryDirectory.appendingPathComponent("Band10Import-\\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: work) }
+
+        func extractManifests(_ archiveURL: URL, into directory: URL, allowNested: Bool) throws -> [URL] {
+            guard let archive = Archive(url: archiveURL, accessMode: .read) else {
+                throw Failure.unreadable("The selected ZIP archive could not be opened.")
+            }
+            let entries = Array(archive)
+            let manifestEntries = entries.filter {
+                $0.path.hasSuffix("/VirtualDevice_registerList/manifest.sqlite")
+                    || $0.path == "VirtualDevice_registerList/manifest.sqlite"
+            }
+            var manifests: [URL] = []
+            for (index, entry) in manifestEntries.enumerated() {
+                let parent = directory.appendingPathComponent("manifest-\\(index)", isDirectory: true)
+                try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+                let prefix = String(entry.path.dropLast("manifest.sqlite".count))
+                for filename in ["manifest.sqlite", "manifest.sqlite-wal", "manifest.sqlite-shm"] {
+                    guard let sibling = entries.first(where: { $0.path == prefix + filename }) else { continue }
+                    try archive.extract(sibling, to: parent.appendingPathComponent(filename))
+                }
+                manifests.append(parent.appendingPathComponent("manifest.sqlite"))
+            }
+            if !manifests.isEmpty { return manifests }
+
+            if allowNested, let nested = entries.first(where: {
+                URL(fileURLWithPath: $0.path).lastPathComponent.lowercased() == "xiadata.zip"
+            }) {
+                let nestedURL = directory.appendingPathComponent("Xiadata-inner.zip")
+                try archive.extract(nested, to: nestedURL)
+                return try extractManifests(nestedURL, into: directory.appendingPathComponent("nested"), allowNested: false)
+            }
+            return []
+        }
+
+        let manifests = try extractManifests(url, into: work, allowNested: true)
+        guard !manifests.isEmpty else { throw Failure.noManifest }
+
+        var keys: [BandKey] = []
+        var diagnostics: [String] = []
+        for manifest in manifests {
+            let (found, notes) = try readManifest(manifest)
+            diagnostics.append(notes)
+            for key in found where !keys.contains(key) { keys.append(key) }
+        }
+        guard !keys.isEmpty else {
+            throw Failure.noKeys("\\(manifests.count) manifest; " + diagnostics.joined(separator: " | "))
         }
         return keys
     }
