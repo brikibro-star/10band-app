@@ -47,12 +47,18 @@ final class BandBluetoothManager: NSObject, ObservableObject {
         if logEntries.count > 1500 { logEntries.removeFirst(logEntries.count - 1500) }
     }
 
+    var diagnosticReport: String {
+        let peripheralState = connectedPeripheral.map { String($0.state.rawValue) } ?? "нет"
+        let activeID = activePeripheralID?.uuidString ?? "нет"
+        let header = "Band 10 Companion BLE diagnostic report\\nDevice: iPhone / iOS\\nCentral state: \\(stateDescription)\\nStatus: \\(status)\\nConnected: \\(isConnected)\\nConnecting: \\(isConnecting)\\nPeripheral state: \\(peripheralState) (0=disconnected, 1=connecting, 2=connected, 3=disconnecting)\\nActive peripheral: \\(activeID)\\nAuthenticated: \\(isAuthenticated)\\nAuth Key available: \\(!Vault.importedBandKeys.isEmpty)\\nGATT characteristics: \\(gattDetails.count)\\n\\n"
+        return header + gattDetails.joined(separator: "\\n") + (gattDetails.isEmpty ? "" : "\\n\\n") + logEntries.joined(separator: "\\n")
+    }
+
     func exportLog() -> URL? {
-        let header = "Band 10 Companion BLE diagnostic report\nDevice: iPhone / iOS\nCentral state: \(stateDescription)\nStatus: \(status)\nConnected: \(isConnected)\nAuthenticated: \(isAuthenticated)\n\n"
-        let content = header + logEntries.joined(separator: "\n")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Band10-BLE-Report-\(Int(Date().timeIntervalSince1970)).txt")
+        let content = diagnosticReport
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Band10-BLE-Report-\\(Int(Date().timeIntervalSince1970)).txt")
         do { try content.write(to: url, atomically: true, encoding: .utf8); return url }
-        catch { log("LOG EXPORT ERROR: \(error.localizedDescription)"); return nil }
+        catch { log("LOG EXPORT ERROR: \\(error.localizedDescription)"); return nil }
     }
 
     override init() {
@@ -124,7 +130,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
             self.log("CONNECT TIMEOUT after 30s; peripheral id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(self.central.state.rawValue)")
             self.connectionTimedOut = true
             self.isConnecting = false
-            self.status = "Тайм-аут подключения (30 с). Поднесите браслет ближе и повторите попытку."
+            self.status = "Тайм-аут BLE: iOS не завершила подключение за 30 секунд. Проверьте, не подключён ли браслет к Mi Fitness, затем повторите попытку."
             self.central.cancelPeripheralConnection(peripheral)
         }
         connectionTimeout = timeout
@@ -361,7 +367,7 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
         isConnected = false
         connectedPeripheral = nil
         if connectionTimedOut {
-            status = "Тайм-аут BLE: браслет не завершил подключение за 15 секунд."
+            status = "Тайм-аут BLE: iOS не завершила подключение за 30 секунд."
             connectionTimedOut = false
         } else {
             status = "Соединение с браслетом разорвано."
