@@ -338,11 +338,23 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
         let manufacturerBytes = (advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data)?.count ?? 0
         let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data] ?? [:]
         let serviceDataKeys = serviceData.keys.map(\.uuidString).joined(separator: ",")
-        let isXiaomiCandidate = serviceData.keys.contains(bandService) || (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.contains(bandService) == true
-        guard isXiaomiCandidate else { return }
+        let visibleName = peripheral.name ?? advertisedName ?? ""
+        let normalizedName = visibleName.lowercased()
+        let nameLooksLikeBand = normalizedName.contains("xiaomi")
+            || normalizedName.contains("smart band")
+            || normalizedName.contains("mi band")
+            || normalizedName.contains("miband")
+        let hasXiaomiService = serviceData.keys.contains(bandService)
+            || (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?.contains(bandService) == true
+        // Some firmware/advertising packets omit FE95 from the advertised UUID list.
+        // Keep name-based discovery as a fallback instead of silently hiding the band.
+        guard hasXiaomiService || nameLooksLikeBand else {
+            log("BLE OTHER id=\(peripheral.identifier.uuidString); name=\(visibleName.isEmpty ? "nil" : visibleName); RSSI=\(RSSI)")
+            return
+        }
         let txPower = advertisementData[CBAdvertisementDataTxPowerLevelKey] ?? "unknown"
-        log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? advertisedName ?? "nil"); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\(serviceUUIDs); manufacturerDataBytes=\(manufacturerBytes); serviceDataUUIDs=\(serviceDataKeys); txPower=\(txPower)")
-        let name = peripheral.name ?? advertisedName ?? "Xiaomi BLE device"
+        log("DISCOVER id=\(peripheral.identifier.uuidString); name=\(visibleName.isEmpty ? "nil" : visibleName); RSSI=\(RSSI); connectable=\(advertisementData[CBAdvertisementDataIsConnectable] ?? "unknown"); serviceUUIDs=\(serviceUUIDs); manufacturerDataBytes=\(manufacturerBytes); serviceDataUUIDs=\(serviceDataKeys); txPower=\(txPower)")
+        let name = visibleName.isEmpty ? "Xiaomi BLE device" : visibleName
         peripherals[peripheral.identifier] = peripheral
         latestRSSI[peripheral.identifier] = (RSSI.intValue, Date())
         let device = BandDevice(id: peripheral.identifier, name: name, rssi: RSSI.intValue)
