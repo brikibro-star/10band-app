@@ -107,19 +107,21 @@ final class BandBluetoothManager: NSObject, ObservableObject {
         connectionTimedOut = false
         connectedPeripheral = peripheral
         status = "Подключение к браслету…"
-        central.connect(peripheral, options: nil)
+        log("CONNECT requested; id=\(peripheral.identifier.uuidString); name=\(peripheral.name ?? "nil"); peripheralState=\(peripheral.state.rawValue); centralState=\(central.state.rawValue); rssi=\(devices.first(where: { $0.id == id })?.rssi ?? 0)")
+        central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnConnectionKey: true,
+                                               CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
 
         let timeout = DispatchWorkItem { [weak self, weak peripheral] in
             guard let self, let peripheral,
                   self.connectedPeripheral?.identifier == peripheral.identifier,
                   !self.isConnected else { return }
-            self.log("CONNECT TIMEOUT after 15s; peripheral id=\(peripheral.identifier.uuidString); central state=\(self.central.state.rawValue)")
+            self.log("CONNECT TIMEOUT after 30s; peripheral id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue); centralState=\(self.central.state.rawValue)")
             self.connectionTimedOut = true
             self.status = "Браслет не ответил за 15 секунд. Проверьте Bluetooth и повторите поиск."
             self.central.cancelPeripheralConnection(peripheral)
         }
         connectionTimeout = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeout)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: timeout)
     }
 
     private var stateDescription: String {
@@ -303,16 +305,19 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        log("DID CONNECT; id=\(peripheral.identifier.uuidString); peripheralState=\(peripheral.state.rawValue)")
         connectionTimeout?.cancel()
         connectionTimeout = nil
         connectionTimedOut = false
         isConnected = true
         status = "Соединение установлено. Поиск BLE-сервисов…"
         peripheral.delegate = self
-        peripheral.discoverServices([bandService])
+        log("GATT discovery requested; services=all")
+        peripheral.discoverServices(nil)
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        log("DID FAIL TO CONNECT; id=\(peripheral.identifier.uuidString); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error))")
         connectionTimeout?.cancel()
         connectionTimeout = nil
         isConnected = false
@@ -321,6 +326,7 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        log("DID DISCONNECT; id=\(peripheral.identifier.uuidString); error=\(error?.localizedDescription ?? "none"); details=\(String(describing: error))")
         connectionTimeout?.cancel()
         connectionTimeout = nil
         resetSession()
@@ -337,6 +343,7 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
 
 extension BandBluetoothManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        log("GATT SERVICES callback; error=\(error?.localizedDescription ?? "none"); services=\((peripheral.services ?? []).map { $0.uuid.uuidString }.joined(separator: ","))")
         if let error {
             status = "Ошибка чтения сервисов: \(error.localizedDescription)"
             return
@@ -350,6 +357,7 @@ extension BandBluetoothManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral,
                     didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
+        log("GATT CHARACTERISTICS callback; service=\(service.uuid.uuidString); error=\(error?.localizedDescription ?? "none")")
         if let error {
             status = "Ошибка чтения характеристик: \(error.localizedDescription)"
             return
