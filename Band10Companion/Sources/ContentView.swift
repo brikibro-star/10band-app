@@ -153,9 +153,14 @@ struct ContentView: View {
                 keyImportMessage = "В выбранном месте ключ не найден."
                 return
             }
+            let imported = keys.map(\.hex)
+            Vault.importedBandKeys = imported
+            guard Vault.importedBandKeys == imported else {
+                keyImportMessage = "Ключ найден, но iOS не подтвердила его сохранение в Keychain. Проверьте настройки устройства и повторите импорт."
+                return
+            }
             importedKeys = keys
-            Vault.importedBandKeys = keys.map(\.hex)
-            keyImportMessage = "Найден ключ обычного Smart Band 10. Секрет сохранён в Keychain."
+            keyImportMessage = "Ключ обычного Smart Band 10 найден и сохранён в защищённом хранилище iPhone."
         } catch {
             keyImportMessage = "Ошибка импорта: \(error.localizedDescription)"
         }
