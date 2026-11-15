@@ -233,7 +233,8 @@ private struct KeyTab: View {
     @State private var authKey = ""
     @State private var message = ""
     @State private var keySaved = !Vault.importedBandKeys.isEmpty
-    @State private var showingMiFitnessPicker = false
+    @State private var showingFolderPicker = false
+    @State private var showingZipPicker = false
     @State private var importedDeviceNames: [String] = []
 
     private var normalizedKey: String {
@@ -247,9 +248,15 @@ private struct KeyTab: View {
             Form {
                 Section("Автоматическое получение ключа") {
                     Button {
-                        showingMiFitnessPicker = true
+                        showingFolderPicker = true
                     } label: {
-                        Label("Загрузить ключ из Mi Fitness", systemImage: "folder.badge.gearshape")
+                        Label("Выбрать папку Mi Fitness", systemImage: "folder")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    Button {
+                        showingZipPicker = true
+                    } label: {
+                        Label("Выбрать ZIP-архив", systemImage: "doc.zipper")
                             .font(.system(size: 14, weight: .semibold))
                     }
                     Text("Выберите папку Mi Fitness в приложении «Файлы» или ZIP-архив этой папки. Приложение найдёт encryptKey для Smart Band 10 и сохранит его в защищённое хранилище.")
@@ -312,9 +319,18 @@ private struct KeyTab: View {
             }
             .navigationTitle("Ключ")
             .navigationBarTitleDisplayMode(.inline)
+            // Separate pickers: iOS Files reliably enables “Open” for a folder
+            // when the allowed type is folder-only, rather than a mixed folder/ZIP list.
             .fileImporter(
-                isPresented: $showingMiFitnessPicker,
-                allowedContentTypes: [.folder, .zip],
+                isPresented: $showingFolderPicker,
+                allowedContentTypes: [.folder],
+                allowsMultipleSelection: false
+            ) { result in
+                importMiFitness(result)
+            }
+            .fileImporter(
+                isPresented: $showingZipPicker,
+                allowedContentTypes: [.zip],
                 allowsMultipleSelection: false
             ) { result in
                 importMiFitness(result)
