@@ -28,6 +28,10 @@ jobs:
         working-directory: Band10Companion
         run: xcodegen generate
 
+      - name: Resolve Swift package dependencies
+        working-directory: Band10Companion
+        run: xcodebuild -resolvePackageDependencies -project Band10Companion.xcodeproj -scheme Band10Companion
+
       - name: Run protocol smoke tests
         working-directory: Band10Companion
         run: |
