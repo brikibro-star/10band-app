@@ -4,9 +4,29 @@ import SQLite3
 
 /// One device entry from Mi Fitness's VirtualDevice_registerList.
 struct BandKey: Equatable {
+    static let targetModel = "miwear.watch.o66gl"
+    static let targetName = "Xiaomi Smart Band 10"
+
     let name: String
     let mac: String?
     let hex: String
+    let model: String?
+    let pid: Int?
+
+    init(name: String, mac: String?, hex: String, model: String? = nil, pid: Int? = nil) {
+        self.name = name
+        self.mac = mac
+        self.hex = hex
+        self.model = model
+        self.pid = pid
+    }
+
+    /// Do not import keys belonging to Pro, Ceramic, or unrelated Xiaomi devices.
+    var isTargetBand: Bool {
+        if let model { return model == Self.targetModel }
+        return name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare(Self.targetName) == .orderedSame
+    }
 
     /// Never shows the key itself, only its last four characters.
     var masked: String { String(repeating: "•", count: 8) + hex.suffix(4) }
@@ -198,10 +218,19 @@ enum KeyLoader {
                   var hex = text(dict[field])?.lowercased() else { continue }
             if hex.hasPrefix("0x") { hex.removeFirst(2) }
             guard hex.count == 32, hex.allSatisfy(\.isHexDigit) else { continue }
-            let key = BandKey(name: text(dict["name"]) ?? text(dict["deviceName"]) ?? "(isimsiz)",
+            let model = text(dict["model"])
+            let name = (text(dict["name"]) ?? text(dict["deviceName"]) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let pid: Int? = {
+                guard let raw = deref(dict["pid"]) else { return nil }
+                if let number = raw as? NSNumber { return number.intValue }
+                if let string = raw as? String { return Int(string) }
+                return nil
+            }()
+            let key = BandKey(name: name.isEmpty ? "(неизвестное устройство)" : name,
                               mac: text(dict["mac"]) ?? text(dict["randomMac"]) ?? text(dict["bleMac"]),
-                              hex: hex)
-            if !keys.contains(key) { keys.append(key) }
+                              hex: hex, model: model, pid: pid)
+            if key.isTargetBand && !keys.contains(key) { keys.append(key) }
         }
         return keys
     }
