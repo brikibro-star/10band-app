@@ -310,7 +310,7 @@ enum KeyLoader {
         // Compatibility fallback for Foundation versions that expose the UID in their description.
         let description = String(describing: value)
         guard description.contains("KeyedArchiverUID"),
-              let range = description.range(of: #"value = (\\d+)"#, options: .regularExpression) else {
+              let range = description.range(of: #"value = (\d+)"#, options: .regularExpression) else {
             return nil
         }
         return Int(description[range].dropFirst("value = ".count))
