@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     var body: some View {
@@ -330,17 +331,11 @@ private struct KeyTab: View {
                 message = "В выбранных файлах не найден ключ Smart Band 10."
                 return
             }
+            let expectedKeys = Array(NSOrderedSet(array: hexKeys)) as? [String] ?? []
             Vault.importedBandKeys = hexKeys
-            guard Vault.importedBandKeys == Array(NSOrderedSet(array: hexKeys)) as? [String] else {
-                // The Keychain setter normalizes and removes duplicates; verify count and availability below.
-                guard !Vault.importedBandKeys.isEmpty else {
-                    message = "Не удалось сохранить ключи в Keychain."
-                    keySaved = false
-                    return
-                }
-                keySaved = true
-                importedDeviceNames = keys.map { "\($0.name)\($0.macSuffix.map { " • …\($0)" } ?? "")" }
-                message = "Найдено ключей: \(keys.count). Они сохранены. Теперь подключайтесь к браслету."
+            guard Vault.importedBandKeys == expectedKeys else {
+                message = "Не удалось сохранить все найденные ключи в Keychain."
+                keySaved = false
                 return
             }
             keySaved = true
