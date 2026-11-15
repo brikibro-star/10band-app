@@ -5,7 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var bluetooth: BandBluetoothManager
     @State private var showingKeyFolderPicker = false
     @State private var importedKeys: [BandKey] = []
-    @State private var keyImportMessage = "Ключ авторизации ещё не импортирован"
+    @State private var keyImportMessage = "Выбери папку Mi Fitness или файл manifest.sqlite"
 
     var body: some View {
         NavigationStack {
@@ -116,14 +116,16 @@ struct ContentView: View {
                 .listStyle(.insetGrouped)
             }
             .navigationTitle("Band 10 Companion")
-            .fileImporter(isPresented: $showingKeyFolderPicker,
-                          allowedContentTypes: [.folder],
-                          allowsMultipleSelection: false) { result in
+            .fileImporter(
+                isPresented: $showingKeyFolderPicker,
+                allowedContentTypes: [.folder, .data],
+                allowsMultipleSelection: false
+            ) { result in
                 do {
-                    guard let folder = try result.get().first else { return }
-                    let keys = try KeyLoader.load(from: folder)
+                    guard let selectedURL = try result.get().first else { return }
+                    let keys = try KeyLoader.load(from: selectedURL)
                     guard !keys.isEmpty else {
-                        keyImportMessage = "В папке Mi Fitness не найден ключ браслета."
+                        keyImportMessage = "В выбранном месте Mi Fitness ключ браслета не найден."
                         return
                     }
                     importedKeys = keys
