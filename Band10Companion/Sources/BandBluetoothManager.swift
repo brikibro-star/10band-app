@@ -39,6 +39,7 @@ final class BandBluetoothManager: NSObject, ObservableObject {
     private var keyIndex = 0
     private var connectionTimeout: DispatchWorkItem?
     private var connectionTimedOut = false
+    private var gattPendingServices: Set<CBUUID> = []
 
     private func log(_ message: String) {
         let stamp = ISO8601DateFormatter().string(from: Date())
@@ -359,7 +360,6 @@ extension BandBluetoothManager: CBCentralManagerDelegate {
         isConnecting = false
         isConnected = false
         connectedPeripheral = nil
-        activePeripheralID = nil
         if connectionTimedOut {
             status = "Тайм-аут BLE: браслет не завершил подключение за 15 секунд."
             connectionTimedOut = false
@@ -376,10 +376,15 @@ extension BandBluetoothManager: CBPeripheralDelegate {
             status = "Ошибка чтения сервисов: \(error.localizedDescription)"
             return
         }
-        for service in peripheral.services ?? [] {
+        let services = peripheral.services ?? []
+        gattPendingServices = Set(services.map(\.uuid))
+        for service in services {
             gattDetails.append("SERVICE  \(service.uuid.uuidString)")
             log("GATT characteristic discovery requested; service=\(service.uuid.uuidString); filter=all")
             peripheral.discoverCharacteristics(nil, for: service)
+        }
+        if services.isEmpty {
+            status = "Устройство подключено, но GATT-сервисы не обнаружены."
         }
     }
 
@@ -391,7 +396,8 @@ extension BandBluetoothManager: CBPeripheralDelegate {
             status = "Ошибка чтения характеристик: \(error.localizedDescription)"
             return
         }
-        for characteristic in service.characteristics ?? [] {
+        let characteristics = service.characteristics ?? []
+        for characteristic in characteristics {
             let properties = characteristic.properties
             var flags: [String] = []
             if properties.contains(.read) { flags.append("read") }
@@ -400,28 +406,36 @@ extension BandBluetoothManager: CBPeripheralDelegate {
             if properties.contains(.notify) { flags.append("notify") }
             if properties.contains(.indicate) { flags.append("indicate") }
             gattDetails.append("CHAR  \(characteristic.uuid.uuidString) [\(flags.joined(separator: ", "))]")
-            if properties.contains(.notify) || properties.contains(.indicate) {
-                if notifyCharacteristic == nil { notifyCharacteristic = characteristic }
-            }
-            if properties.contains(.writeWithoutResponse) || properties.contains(.write) {
-                if writeCharacteristic == nil { writeCharacteristic = characteristic }
-            }
         }
-        if let notifyCharacteristic, let writeCharacteristic {
-            log("GATT transport selected; notify=\(notifyCharacteristic.uuid.uuidString); write=\(writeCharacteristic.uuid.uuidString)")
-            status = "Найдены характеристики связи. Проверяю протокол…"
-            peripheral.setNotifyValue(true, for: notifyCharacteristic)
-        } else {
-            let all = (service.characteristics ?? []).map { $0.uuid.uuidString }.joined(separator: ", ")
-            status = "GATT найден, но нет пары Notify/Write. Смотрите полный список характеристик в отчёте."
-            log("GATT transport pair incomplete; service=\(service.uuid.uuidString); characteristics=\(all)")
+
+        let notifyCandidate = characteristics.first {
+            $0.properties.contains(.notify) || $0.properties.contains(.indicate)
+        }
+        let writeCandidate = characteristics.first {
+            $0.properties.contains(.writeWithoutResponse) || $0.properties.contains(.write)
+        }
+        if let notifyCandidate, let writeCandidate, notifyCharacteristic == nil, writeCharacteristic == nil {
+            notifyCharacteristic = notifyCandidate
+            writeCharacteristic = writeCandidate
+            log("GATT transport selected in service \(service.uuid.uuidString); notify=\(notifyCandidate.uuid.uuidString); write=\(writeCandidate.uuid.uuidString)")
+            status = "Найдены характеристики связи. Включаю уведомления…"
+            peripheral.setNotifyValue(true, for: notifyCandidate)
+        } else if notifyCandidate == nil || writeCandidate == nil {
+            log("GATT service has no complete Notify/Write pair; service=\(service.uuid.uuidString); notify=\(notifyCandidate?.uuid.uuidString ?? "none"); write=\(writeCandidate?.uuid.uuidString ?? "none")")
+        }
+
+        gattPendingServices.remove(service.uuid)
+        if gattPendingServices.isEmpty && (notifyCharacteristic == nil || writeCharacteristic == nil) {
+            let summary = gattDetails.filter { $0.hasPrefix("CHAR") }.joined(separator: " | ")
+            status = "GATT прочитан, но подходящая пара Notify/Write не найдена. Полный список — в отчёте."
+            log("GATT discovery complete; transport pair missing; \(summary)")
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral,
                     didUpdateNotificationStateFor characteristic: CBCharacteristic,
                     error: Error?) {
-        guard characteristic.uuid == notifyUUID else { return }
+        guard characteristic.uuid == notifyCharacteristic?.uuid else { return }
         if let error {
             status = "Не удалось включить уведомления: \(error.localizedDescription)"
         } else if characteristic.isNotifying {
@@ -436,7 +450,7 @@ extension BandBluetoothManager: CBPeripheralDelegate {
             status = "Ошибка приёма BLE: \(error.localizedDescription)"
             return
         }
-        guard characteristic.uuid == notifyUUID, let value = characteristic.value else { return }
+        guard characteristic.uuid == notifyCharacteristic?.uuid, let value = characteristic.value else { return }
         receive(value)
     }
 
