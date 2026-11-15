@@ -102,7 +102,7 @@ enum KeyLoader {
     /// Also supports the common Mi Fitness export layout where the selected ZIP contains Xiadata.zip.
     private static func loadZip(from url: URL) throws -> [BandKey] {
         let fm = FileManager.default
-        let work = fm.temporaryDirectory.appendingPathComponent("Band10Import-\\(UUID().uuidString)", isDirectory: true)
+        let work = fm.temporaryDirectory.appendingPathComponent("Band10Import-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: work) }
 
@@ -117,7 +117,7 @@ enum KeyLoader {
             }
             var manifests: [URL] = []
             for (index, entry) in manifestEntries.enumerated() {
-                let parent = directory.appendingPathComponent("manifest-\\(index)", isDirectory: true)
+                let parent = directory.appendingPathComponent("manifest-\(index)", isDirectory: true)
                 try fm.createDirectory(at: parent, withIntermediateDirectories: true)
                 let prefix = String(entry.path.dropLast("manifest.sqlite".count))
                 for filename in ["manifest.sqlite", "manifest.sqlite-wal", "manifest.sqlite-shm"] {
@@ -149,7 +149,7 @@ enum KeyLoader {
             for key in found where !keys.contains(key) { keys.append(key) }
         }
         guard !keys.isEmpty else {
-            throw Failure.noKeys("\\(manifests.count) manifest; " + diagnostics.joined(separator: " | "))
+            throw Failure.noKeys("\(manifests.count) manifest; " + diagnostics.joined(separator: " | "))
         }
         return keys
     }
